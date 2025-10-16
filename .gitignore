@@ -1,0 +1,29 @@
+# API Keys and sensitive data
+config.py
+.env
+*.key
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+logs/
+
+# Trading data
+data/
+*.db
+*.sqlite
