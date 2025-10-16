@@ -7,14 +7,23 @@ import config
 
 
 class GateioFutures:
-    def __init__(self):
+    def __init__(self, testnet=False):
         """Initialize Gate.io Futures API client"""
-        configuration = gate_api.Configuration(
-            key=config.API_KEY,
-            secret=config.API_SECRET
-        )
-        self.futures_api = gate_api.FuturesApi(gate_api.ApiClient(configuration))
+        # Configure host based on environment
+        if testnet:
+            host = "https://api-testnet.gateapi.io/api/v4"
+        else:
+            host = "https://api.gateio.ws/api/v4"
+
+        configuration = gate_api.Configuration(host=host)
+        configuration.key = config.API_KEY
+        configuration.secret = config.API_SECRET
+
+        # Create API client and futures API instance
+        api_client = gate_api.ApiClient(configuration)
+        self.futures_api = gate_api.FuturesApi(api_client)
         self.settle = 'usdt'  # USDT settled futures
+        self.testnet = testnet
 
     def get_account_balance(self):
         """Get account balance"""
@@ -33,7 +42,7 @@ class GateioFutures:
     def get_current_price(self, symbol):
         """Get current price for a symbol"""
         try:
-            contract = symbol.replace('_', '')  # BTC_USDT -> BTCUSDT
+            contract = symbol  # Keep underscore: ETH_USDT
             tickers = self.futures_api.list_futures_tickers(self.settle, contract=contract)
             if tickers:
                 return float(tickers[0].last)
@@ -45,8 +54,11 @@ class GateioFutures:
     def get_position(self, symbol):
         """Get current position for a symbol"""
         try:
-            contract = symbol.replace('_', '')
-            positions = self.futures_api.list_positions(self.settle, contract=contract)
+            contract = symbol
+            # list_positions returns all positions, filter by contract
+            positions = self.futures_api.list_positions(self.settle)
+            # Filter for the specific contract
+            positions = [p for p in positions if p.contract == contract]
             if positions:
                 pos = positions[0]
                 return {
@@ -63,7 +75,7 @@ class GateioFutures:
     def set_leverage(self, symbol, leverage):
         """Set leverage for a symbol"""
         try:
-            contract = symbol.replace('_', '')
+            contract = symbol
             self.futures_api.update_position_leverage(
                 self.settle,
                 contract,
@@ -87,7 +99,7 @@ class GateioFutures:
             order_type: 'market' or 'limit'
         """
         try:
-            contract = symbol.replace('_', '')
+            contract = symbol
 
             # Prepare order
             order = gate_api.FuturesOrder(
@@ -132,7 +144,7 @@ class GateioFutures:
             limit: Number of candles
         """
         try:
-            contract = symbol.replace('_', '')
+            contract = symbol
             candles = self.futures_api.list_futures_candlesticks(
                 self.settle,
                 contract=contract,

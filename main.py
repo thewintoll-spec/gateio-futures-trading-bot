@@ -10,7 +10,7 @@ from strategy import RSIStrategy
 class TradingBot:
     def __init__(self):
         """Initialize trading bot"""
-        self.exchange = GateioFutures()
+        self.exchange = GateioFutures(testnet=config.TESTNET)
         self.strategy = RSIStrategy(
             period=config.RSI_PERIOD,
             oversold=config.RSI_OVERSOLD,
@@ -24,6 +24,7 @@ class TradingBot:
 
         print("=" * 50)
         print("Gate.io Futures Trading Bot Started")
+        print(f"Environment: {'TESTNET' if config.TESTNET else 'MAINNET'}")
         print("=" * 50)
 
     def setup(self):

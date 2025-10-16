@@ -4,10 +4,13 @@
 API_KEY = "your_api_key_here"
 API_SECRET = "your_api_secret_here"
 
+# Environment
+TESTNET = True  # Set to True for testnet, False for mainnet
+
 # Trading Configuration
-SYMBOL = "BTC_USDT"  # Trading pair
+SYMBOL = "ETH_USDT"  # Trading pair
 LEVERAGE = 10  # Leverage for futures trading
-ORDER_SIZE = 0.001  # Order size in BTC
+ORDER_SIZE = 0.01  # Order size in ETH
 
 # Risk Management
 MAX_POSITION_SIZE = 0.01  # Maximum position size
