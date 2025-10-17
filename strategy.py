@@ -143,3 +143,119 @@ class MovingAverageCrossStrategy:
                 return 'short'
 
         return None
+
+
+class BollingerBandStrategy:
+    """Bollinger Band Mean Reversion Strategy - Good for ranging markets"""
+
+    def __init__(self, period=20, std_dev=2):
+        """
+        Initialize Bollinger Band strategy
+
+        Args:
+            period: BB calculation period
+            std_dev: Number of standard deviations
+        """
+        self.period = period
+        self.std_dev = std_dev
+
+    def calculate_bb(self, prices):
+        """Calculate Bollinger Bands"""
+        if len(prices) < self.period:
+            return None, None, None
+
+        prices_array = np.array(prices[-self.period:])
+        sma = np.mean(prices_array)
+        std = np.std(prices_array)
+
+        upper = sma + (self.std_dev * std)
+        lower = sma - (self.std_dev * std)
+
+        return upper, sma, lower
+
+    def analyze(self, candles):
+        """
+        Analyze market data and generate signals
+        Buy when price touches lower band (oversold)
+        Sell when price touches upper band (overbought)
+
+        Returns:
+            Signal: 'long', 'short', or None
+        """
+        if not candles or len(candles) < self.period:
+            return None
+
+        closes = [c['close'] for c in candles]
+        current_price = closes[-1]
+
+        upper, middle, lower = self.calculate_bb(closes)
+
+        if upper is None:
+            return None
+
+        print(f"BB: Upper={upper:.2f}, Middle={middle:.2f}, Lower={lower:.2f}, Price={current_price:.2f}")
+
+        # Mean reversion signals
+        if current_price <= lower:
+            return 'long'  # Price at lower band - buy
+        elif current_price >= upper:
+            return 'short'  # Price at upper band - sell
+
+        return None
+
+
+class AdaptiveStrategy:
+    """Adaptive strategy that switches based on market regime"""
+
+    def __init__(self):
+        """Initialize adaptive strategy with multiple sub-strategies"""
+        from market_regime import RegimeDetector
+
+        self.detector = RegimeDetector(adx_period=14, adx_threshold=25)
+
+        # Strategies for different market conditions
+        self.trending_strategy = MovingAverageCrossStrategy(fast_period=20, slow_period=50)
+        self.ranging_strategy = BollingerBandStrategy(period=20, std_dev=2)
+
+        # For backtest compatibility
+        self.period = 50  # Use the longest period needed
+
+        self.last_regime = None
+
+    def analyze(self, candles):
+        """
+        Analyze market and generate signals based on detected regime
+
+        Returns:
+            Signal: 'long', 'short', or None
+        """
+        if not candles or len(candles) < self.period:
+            return None
+
+        # Detect market regime
+        regime_result = self.detector.detect_regime(candles)
+
+        if regime_result is None:
+            return None
+
+        regime, adx, bb_width = regime_result
+
+        # Print regime change
+        if regime != self.last_regime:
+            print(f"\n[Regime Change] {self.last_regime or 'Unknown'} -> {regime.upper()}")
+            print(f"  ADX: {adx:.2f}, BB Width: {bb_width:.4f}")
+            self.last_regime = regime
+
+        # Select strategy based on regime
+        if regime == 'trending':
+            # Use trend-following strategy (MA Cross)
+            signal = self.trending_strategy.analyze(candles)
+            if signal:
+                print(f"[Adaptive] Using MA Cross (Trending market)")
+            return signal
+        else:  # ranging
+            # Use mean-reversion strategy (Bollinger Bands)
+            signal = self.ranging_strategy.analyze(candles)
+            if signal:
+                print(f"[Adaptive] Using Bollinger Bands (Ranging market)")
+            return signal

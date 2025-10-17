@@ -132,8 +132,8 @@ class TradingBot:
                 print("[Warning] Could not get current price, using default order size")
                 return int(self.order_size / 0.01)
 
-            # Use 80% of total USDT for position sizing
-            usdt_to_use = total_usdt * 0.8
+            # Use 95% of total USDT for position sizing (최적화 결과 100% → 95%로 안전하게 조정)
+            usdt_to_use = total_usdt * 0.95
 
             # Calculate quantity considering leverage
             # Gate.io: 1 contract = 0.01 ETH (quanto_multiplier)
@@ -141,7 +141,7 @@ class TradingBot:
             contract_size = int(quantity_in_asset / 0.01)  # Convert to contracts (divide by 0.01)
 
             print(f"[Balance] Total: {total_usdt:.2f} USDT | Available: {available_usdt:.2f} USDT | In Position: {position_margin:.2f} USDT")
-            print(f"[Order Size] Using: {usdt_to_use:.2f} USDT (80% of total)")
+            print(f"[Order Size] Using: {usdt_to_use:.2f} USDT (95% of total)")
             print(f"[Order Size] Calculated size: {contract_size} contracts (~{quantity_in_asset:.4f} {self.symbol.split('_')[0]})")
 
             return max(1, contract_size)  # At least 1 contract

@@ -3,7 +3,7 @@
 """
 from backtest.data_loader import DataLoader
 from backtest.backtest import BacktestEngine
-from strategy import RSIStrategy, MovingAverageCrossStrategy
+from strategy import RSIStrategy, MovingAverageCrossStrategy, BollingerBandStrategy, AdaptiveStrategy
 import config
 
 
@@ -89,6 +89,8 @@ def main():
         'RSI (21, 30/70)': RSIStrategy(period=21, oversold=30, overbought=70),
         'MA Cross (10/30)': MovingAverageCrossStrategy(fast_period=10, slow_period=30),
         'MA Cross (20/50)': MovingAverageCrossStrategy(fast_period=20, slow_period=50),
+        'Bollinger Bands': BollingerBandStrategy(period=20, std_dev=2),
+        'Adaptive Strategy': AdaptiveStrategy(),
     }
 
     # 각 전략 백테스트
