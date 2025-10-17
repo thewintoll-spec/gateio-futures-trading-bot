@@ -63,6 +63,38 @@ class TradingBot:
             self.current_side = None
             return None
 
+    def calculate_order_size(self):
+        """Calculate order size based on available balance (80% of available USDT)"""
+        try:
+            balance = self.exchange.get_account_balance()
+            if not balance:
+                print("[Warning] Could not get balance, using default order size")
+                return int(self.order_size * 10000)
+
+            available_usdt = float(balance['available'])
+            price = self.exchange.get_current_price(self.symbol)
+
+            if not price or price == 0:
+                print("[Warning] Could not get current price, using default order size")
+                return int(self.order_size * 10000)
+
+            # Use 80% of available USDT
+            usdt_to_use = available_usdt * 0.8
+
+            # Calculate quantity considering leverage
+            # size in contracts (for ETH: 1 contract = 0.0001 ETH)
+            quantity_in_asset = (usdt_to_use * self.leverage) / price
+            contract_size = int(quantity_in_asset * 10000)  # Convert to contracts
+
+            print(f"[Order Size] Available: {available_usdt:.2f} USDT | Using: {usdt_to_use:.2f} USDT (80%)")
+            print(f"[Order Size] Calculated size: {contract_size} contracts (~{quantity_in_asset:.4f} {self.symbol.split('_')[0]})")
+
+            return max(1, contract_size)  # At least 1 contract
+
+        except Exception as e:
+            print(f"[Error] Failed to calculate order size: {e}")
+            return int(self.order_size * 10000)
+
     def execute_trade(self, signal):
         """Execute trade based on signal"""
         if signal == self.current_side:
@@ -78,10 +110,8 @@ class TradingBot:
         # Open new position
         print(f"[Trade] Opening {signal.upper()} position...")
 
-        # Calculate contract size
-        # For Gate.io, size is in number of contracts
-        # 1 BTC contract = 0.0001 BTC typically
-        contract_size = int(self.order_size * 10000)  # Convert to contracts
+        # Calculate contract size based on available balance
+        contract_size = self.calculate_order_size()
 
         result = self.exchange.place_order(
             symbol=self.symbol,
