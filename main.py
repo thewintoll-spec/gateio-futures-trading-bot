@@ -19,8 +19,11 @@ class TradingBot:
         self.symbol = config.SYMBOL
         self.leverage = config.LEVERAGE
         self.order_size = config.ORDER_SIZE
+        self.stop_loss_percent = config.STOP_LOSS_PERCENT
+        self.take_profit_percent = config.TAKE_PROFIT_PERCENT
         self.in_position = False
         self.current_side = None
+        self.position_margin = 0  # Track the margin used for the position
 
         print("=" * 50)
         print("Gate.io Futures Trading Bot Started")
@@ -45,6 +48,8 @@ class TradingBot:
         print(f"[Setup] Strategy: RSI ({config.RSI_PERIOD})")
         print(f"[Setup] RSI Oversold: {config.RSI_OVERSOLD}")
         print(f"[Setup] RSI Overbought: {config.RSI_OVERBOUGHT}")
+        print(f"[Setup] Stop Loss: {self.stop_loss_percent}%")
+        print(f"[Setup] Take Profit: {self.take_profit_percent}%")
 
         return True
 
@@ -54,14 +59,54 @@ class TradingBot:
         if position and position['size'] != 0:
             self.in_position = True
             self.current_side = 'long' if position['size'] > 0 else 'short'
+
+            # Get position margin from balance
+            balance = self.exchange.get_account_balance()
+            if balance:
+                self.position_margin = float(balance['position_margin'])
+
+            pnl = position['unrealised_pnl']
+            pnl_percent = (pnl / self.position_margin * 100) if self.position_margin > 0 else 0
+
             print(f"\n[Position] {self.current_side.upper()} | Size: {abs(position['size'])} | "
                   f"Entry: {position['entry_price']:.2f} | "
-                  f"PnL: {position['unrealised_pnl']:.4f} USDT")
+                  f"PnL: {pnl:.4f} USDT ({pnl_percent:+.2f}%)")
             return position
         else:
             self.in_position = False
             self.current_side = None
+            self.position_margin = 0
             return None
+
+    def check_stop_loss_take_profit(self, position):
+        """Check if stop loss or take profit is hit"""
+        if not position or self.position_margin == 0:
+            return False
+
+        pnl = position['unrealised_pnl']
+        pnl_percent = (pnl / self.position_margin) * 100
+
+        # Check stop loss
+        if pnl_percent <= -self.stop_loss_percent:
+            print(f"\n[Risk Management] Stop Loss hit! PnL: {pnl_percent:.2f}% (Target: -{self.stop_loss_percent}%)")
+            print(f"[Risk Management] Closing position...")
+            self.exchange.close_position(self.symbol)
+            self.in_position = False
+            self.current_side = None
+            time.sleep(2)
+            return True
+
+        # Check take profit
+        if pnl_percent >= self.take_profit_percent:
+            print(f"\n[Risk Management] Take Profit hit! PnL: {pnl_percent:.2f}% (Target: +{self.take_profit_percent}%)")
+            print(f"[Risk Management] Closing position...")
+            self.exchange.close_position(self.symbol)
+            self.in_position = False
+            self.current_side = None
+            time.sleep(2)
+            return True
+
+        return False
 
     def calculate_order_size(self):
         """Calculate order size based on total balance (80% of total USDT)"""
@@ -154,7 +199,15 @@ class TradingBot:
                     print(f"[Price] {self.symbol}: ${price:.2f}")
 
                 # Check current position
-                self.check_position()
+                position = self.check_position()
+
+                # Check stop loss and take profit if in position
+                if self.in_position and position:
+                    if self.check_stop_loss_take_profit(position):
+                        # Position was closed, skip to next iteration
+                        print(f"\nWaiting 60 seconds...")
+                        time.sleep(60)
+                        continue
 
                 # Get market data
                 candles = self.exchange.get_candlesticks(
