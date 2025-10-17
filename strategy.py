@@ -101,6 +101,7 @@ class MovingAverageCrossStrategy:
         """
         self.fast_period = fast_period
         self.slow_period = slow_period
+        self.period = slow_period  # For backtest compatibility
 
     def calculate_ma(self, prices, period):
         """Calculate Simple Moving Average"""
