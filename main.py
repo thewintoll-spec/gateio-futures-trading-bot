@@ -69,7 +69,7 @@ class TradingBot:
             balance = self.exchange.get_account_balance()
             if not balance:
                 print("[Warning] Could not get balance, using default order size")
-                return int(self.order_size * 10000)
+                return int(self.order_size / 0.01)
 
             # Use total balance (available + position_margin + order_margin)
             # This represents the full account value regardless of current positions
@@ -81,15 +81,15 @@ class TradingBot:
 
             if not price or price == 0:
                 print("[Warning] Could not get current price, using default order size")
-                return int(self.order_size * 10000)
+                return int(self.order_size / 0.01)
 
             # Use 80% of total USDT for position sizing
             usdt_to_use = total_usdt * 0.8
 
             # Calculate quantity considering leverage
-            # size in contracts (for ETH: 1 contract = 0.0001 ETH)
+            # Gate.io: 1 contract = 0.01 ETH (quanto_multiplier)
             quantity_in_asset = (usdt_to_use * self.leverage) / price
-            contract_size = int(quantity_in_asset * 10000)  # Convert to contracts
+            contract_size = int(quantity_in_asset / 0.01)  # Convert to contracts (divide by 0.01)
 
             print(f"[Balance] Total: {total_usdt:.2f} USDT | Available: {available_usdt:.2f} USDT | In Position: {position_margin:.2f} USDT")
             print(f"[Order Size] Using: {usdt_to_use:.2f} USDT (80% of total)")
@@ -99,7 +99,7 @@ class TradingBot:
 
         except Exception as e:
             print(f"[Error] Failed to calculate order size: {e}")
-            return int(self.order_size * 10000)
+            return int(self.order_size / 0.01)
 
     def execute_trade(self, signal):
         """Execute trade based on signal"""
