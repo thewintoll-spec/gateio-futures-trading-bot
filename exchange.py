@@ -65,6 +65,7 @@ class GateioFutures:
                     'size': int(pos.size),
                     'entry_price': float(pos.entry_price) if pos.entry_price else 0,
                     'leverage': int(pos.leverage),
+                    'margin': float(pos.margin) if pos.margin else 0,
                     'unrealised_pnl': float(pos.unrealised_pnl) if pos.unrealised_pnl else 0,
                     'pnl_pnl': float(pos.pnl_pnl) if pos.pnl_pnl else 0,
                     'pnl_fee': float(pos.pnl_fee) if pos.pnl_fee else 0,

@@ -60,10 +60,8 @@ class TradingBot:
             self.in_position = True
             self.current_side = 'long' if position['size'] > 0 else 'short'
 
-            # Get position margin from balance
-            balance = self.exchange.get_account_balance()
-            if balance:
-                self.position_margin = float(balance['position_margin'])
+            # Get position margin from position (not account balance)
+            self.position_margin = position.get('margin', 0)
 
             pnl = position['unrealised_pnl']
             pnl_pnl = position.get('pnl_pnl', 0)
@@ -72,7 +70,7 @@ class TradingBot:
             pnl_percent = (pnl / self.position_margin * 100) if self.position_margin > 0 else 0
 
             print(f"\n[Position] {self.current_side.upper()} | Size: {abs(position['size'])} | "
-                  f"Entry: {position['entry_price']:.2f}")
+                  f"Entry: {position['entry_price']:.2f} | Margin: {self.position_margin:.2f} USDT")
             print(f"  Total PnL: {pnl:.4f} USDT ({pnl_percent:+.2f}%)")
             print(f"  ├─ Price PnL: {pnl_pnl:.4f} USDT")
             print(f"  ├─ Fee: {pnl_fee:.4f} USDT")
