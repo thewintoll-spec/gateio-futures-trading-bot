@@ -169,3 +169,99 @@ class GateioFutures:
         except GateApiException as e:
             print(f"Error getting candlesticks: {e}")
             return None
+
+    def get_position_history(self, limit=20):
+        """
+        청산된 포지션 내역 조회
+
+        Args:
+            limit: 조회할 개수 (기본 20)
+        """
+        try:
+            positions = self.futures_api.list_position_close(
+                self.settle,
+                limit=limit
+            )
+
+            result = []
+            for pos in positions:
+                # PositionClose 객체의 실제 속성들
+                result.append({
+                    'time': pos.time,
+                    'contract': pos.contract,
+                    'side': pos.side,
+                    'pnl': float(pos.pnl)
+                })
+
+            return result
+
+        except GateApiException as e:
+            print(f"Error getting position history: {e}")
+            return None
+
+    def get_order_history(self, status='finished', limit=20):
+        """
+        주문 내역 조회
+
+        Args:
+            status: 'open', 'finished' (기본)
+            limit: 조회할 개수
+        """
+        try:
+            orders = self.futures_api.list_futures_orders(
+                self.settle,
+                status=status,
+                limit=limit
+            )
+
+            result = []
+            for order in orders:
+                result.append({
+                    'id': order.id,
+                    'contract': order.contract,
+                    'size': int(order.size),
+                    'price': float(order.price) if order.price else 0,
+                    'fill_price': float(order.fill_price) if order.fill_price else 0,
+                    'status': order.status,
+                    'side': 'long' if int(order.size) > 0 else 'short',
+                    'create_time': order.create_time,
+                    'finish_time': order.finish_time if hasattr(order, 'finish_time') else None
+                })
+
+            return result
+
+        except GateApiException as e:
+            print(f"Error getting order history: {e}")
+            return None
+
+    def get_trade_history(self, limit=20):
+        """
+        체결 내역 조회 (실제 거래 내역)
+
+        Args:
+            limit: 조회할 개수
+        """
+        try:
+            trades = self.futures_api.list_my_trades(
+                self.settle,
+                limit=limit
+            )
+
+            result = []
+            for trade in trades:
+                result.append({
+                    'id': trade.id,
+                    'create_time': trade.create_time,
+                    'contract': trade.contract,
+                    'order_id': trade.order_id,
+                    'size': int(trade.size),
+                    'price': float(trade.price),
+                    'role': trade.role,  # 'taker' or 'maker'
+                    'side': 'long' if int(trade.size) > 0 else 'short'
+                })
+
+            return result
+
+        except GateApiException as e:
+            print(f"Error getting trade history: {e}")
+            return None
