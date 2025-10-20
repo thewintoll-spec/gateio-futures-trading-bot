@@ -34,7 +34,7 @@ class BacktestEngine:
         self.trades = []  # List of completed trades
         self.equity_curve = []  # Track capital over time
 
-    def run(self, df, strategy, capital_pct=0.8):
+    def run(self, df, strategy, capital_pct=0.8, allow_reversal=False):
         """
         Run backtest on historical data
 
@@ -42,6 +42,7 @@ class BacktestEngine:
             df: DataFrame with OHLCV data
             strategy: Strategy instance with analyze() method
             capital_pct: Percentage of capital to use per trade (0.8 = 80%)
+            allow_reversal: Allow position reversal (default False)
 
         Returns:
             dict with backtest results
@@ -50,6 +51,7 @@ class BacktestEngine:
         print(f"Initial capital: {self.initial_capital} USDT")
         print(f"Leverage: {self.leverage}x")
         print(f"Capital usage: {capital_pct * 100}%")
+        print(f"Position reversal: {'Enabled' if allow_reversal else 'Disabled (TP/SL only)'}")
 
         for i in range(len(df)):
             row = df.iloc[i]
@@ -63,19 +65,25 @@ class BacktestEngine:
             # Analyze with strategy
             signal = strategy.analyze(candles) if len(candles) > strategy.period else None
 
-            # Check stop loss / take profit if in position
-            if self.position:
-                self._check_stop_loss_take_profit(current_price, current_time)
-
             # Execute signal
             if signal and not self.position:
                 # Open new position
                 self._open_position(signal, current_price, current_time, capital_pct)
 
-            elif signal and self.position and signal != self.position['side']:
-                # Close and reverse
-                self._close_position(current_price, current_time, reason='reverse')
-                self._open_position(signal, current_price, current_time, capital_pct)
+            elif signal and self.position and allow_reversal:
+                # Get signal side (handle both string and dict)
+                signal_side = signal if isinstance(signal, str) else signal.get('signal')
+                if signal_side != self.position['side']:
+                    # Close and reverse (only if allowed)
+                    self._close_position(current_price, current_time, reason='reverse')
+                    self._open_position(signal, current_price, current_time, capital_pct)
+
+            # Check TP/SL (always check if position exists)
+            if self.position:
+                tp = self.position.get('take_profit', 5.0)
+                sl = self.position.get('stop_loss', 1.5)
+                self._check_stop_loss_take_profit(current_price, current_time,
+                                                   stop_loss_pct=sl, take_profit_pct=tp)
 
             # Track equity
             equity = self._calculate_equity(current_price)
@@ -93,8 +101,24 @@ class BacktestEngine:
 
         return self._generate_results()
 
-    def _open_position(self, side, price, time, capital_pct):
-        """Open a new position"""
+    def _open_position(self, signal_data, price, time, capital_pct):
+        """Open a new position
+
+        Args:
+            signal_data: Can be string ('long'/'short') or dict with 'signal', 'take_profit', 'stop_loss'
+        """
+        # Handle both old (string) and new (dict) signal format
+        if isinstance(signal_data, str):
+            side = signal_data
+            take_profit = 5.0
+            stop_loss = 1.5
+        elif isinstance(signal_data, dict):
+            side = signal_data['signal']
+            take_profit = signal_data.get('take_profit', 5.0)
+            stop_loss = signal_data.get('stop_loss', 1.5)
+        else:
+            return
+
         # Calculate position size
         usdt_to_use = self.capital * capital_pct
         margin = usdt_to_use / self.leverage
@@ -112,7 +136,9 @@ class BacktestEngine:
             'size': size,
             'margin': margin,
             'entry_fee': entry_fee,
-            'position_value': position_value
+            'position_value': position_value,
+            'take_profit': take_profit,
+            'stop_loss': stop_loss
         }
 
     def _close_position(self, price, time, reason='signal'):
