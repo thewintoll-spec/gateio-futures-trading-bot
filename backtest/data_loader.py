@@ -51,8 +51,12 @@ class DataLoader:
 
         print(f"Estimated {total_candles} candles, {num_requests} requests needed")
 
+        # Start from most recent and work backwards
+        end_time = None
+
         for i in range(num_requests):
             try:
+                # Fetch candles - API returns newest first by default
                 candles = self.exchange.get_candlesticks(
                     self.symbol,
                     interval=interval,
@@ -63,12 +67,13 @@ class DataLoader:
                     print(f"No more data available after {i} requests")
                     break
 
-                all_candles.extend(candles)
-                print(f"Request {i+1}/{num_requests}: Fetched {len(candles)} candles")
-
-                # Respect rate limits
-                if i < num_requests - 1:
-                    time.sleep(0.2)
+                # Gate.io returns newest data by default, and we can only get last ~1000 candles
+                # This is a limitation of testnet API
+                if i == 0:
+                    all_candles.extend(candles)
+                    print(f"Request {i+1}/{num_requests}: Fetched {len(candles)} candles")
+                    print(f"Note: Gate.io Testnet API only provides recent ~1000 candles")
+                    break  # Can't fetch more on testnet
 
             except Exception as e:
                 print(f"Error fetching data: {e}")
