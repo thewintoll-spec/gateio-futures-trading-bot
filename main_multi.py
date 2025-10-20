@@ -8,9 +8,11 @@ Grid Trading Strategy for BTC and ETH
 - 포지션 2개: 대기 (포지션 청산 시까지)
 """
 import time
+from datetime import datetime
 import config
 from exchange import GateioFutures
 from grid_strategy import GridTradingStrategy
+from trade_logger import TradeLogger
 
 
 class MultiSymbolTradingBot:
@@ -39,6 +41,10 @@ class MultiSymbolTradingBot:
 
         # Position tracking
         self.positions = {}  # {symbol: {'side': 'long/short', 'margin': float, 'tp': float, 'sl': float}}
+        self.position_entry_time = {}  # Track entry time for each position
+
+        # Trade logger
+        self.logger = TradeLogger()
 
         print("=" * 60)
         print("Gate.io Multi-Symbol Futures Trading Bot Started")
@@ -111,23 +117,57 @@ class MultiSymbolTradingBot:
         tp = position_info.get('tp', 3.0)
         sl = position_info.get('sl', 2.0)
 
+        reason = None
+
         # Check stop loss
         if pnl_percent <= -sl:
             print(f"\n[{symbol}] Stop Loss hit! PnL: {pnl_percent:.2f}% (Target: -{sl}%)")
             print(f"[{symbol}] Closing position...")
-            self.exchange.close_position(symbol)
-            if symbol in self.positions:
-                del self.positions[symbol]
-            time.sleep(2)
-            return True
+            reason = 'stop_loss'
 
         # Check take profit
-        if pnl_percent >= tp:
+        elif pnl_percent >= tp:
             print(f"\n[{symbol}] Take Profit hit! PnL: {pnl_percent:.2f}% (Target: +{tp}%)")
             print(f"[{symbol}] Closing position...")
+            reason = 'take_profit'
+
+        if reason:
+            # Close position
             self.exchange.close_position(symbol)
+
+            # Calculate holding time
+            holding_time = 'N/A'
+            if symbol in self.position_entry_time:
+                entry_time = self.position_entry_time[symbol]
+                holding_seconds = (datetime.now() - entry_time).total_seconds()
+                hours = int(holding_seconds // 3600)
+                minutes = int((holding_seconds % 3600) // 60)
+                holding_time = f"{hours:02d}:{minutes:02d}:00"
+
+            # Log exit
+            self.logger.log_exit(
+                symbol=symbol,
+                reason=reason,
+                position_data={
+                    'side': position_info['side'],
+                    'entry_price': position_info['entry_price'],
+                    'exit_price': self.exchange.get_current_price(symbol),
+                    'size': position_info['size'],
+                    'holding_time': holding_time,
+                },
+                pnl_data={
+                    'pnl_usdt': position_info['pnl'],
+                    'pnl_percent': pnl_percent,
+                    'roi': pnl_percent * self.leverage,
+                }
+            )
+
+            # Remove from tracking
             if symbol in self.positions:
                 del self.positions[symbol]
+            if symbol in self.position_entry_time:
+                del self.position_entry_time[symbol]
+
             time.sleep(2)
             return True
 
@@ -241,7 +281,33 @@ class MultiSymbolTradingBot:
 
         if result:
             print(f"[{symbol}] {side.upper()} order executed successfully!")
-            # Position will be updated in next check_positions() call
+
+            # Record entry time
+            self.position_entry_time[symbol] = datetime.now()
+
+            # Get current price for logging
+            current_price = self.exchange.get_current_price(symbol)
+
+            # Get balance for margin calculation
+            balance = self.exchange.get_account_balance()
+            usdt_to_use = float(balance['available']) * capital_pct if balance else 0
+
+            # Log entry
+            self.logger.log_entry(
+                symbol=symbol,
+                signal_info={
+                    'signal': side,
+                    'grid_level': signal.get('grid_level') if isinstance(signal, dict) else None,
+                    'take_profit': tp,
+                    'stop_loss': sl,
+                },
+                market_data={
+                    'price': current_price,
+                    'size': contract_size,
+                    'margin': usdt_to_use,
+                    'leverage': self.leverage,
+                }
+            )
         else:
             print(f"[{symbol}] Failed to execute order")
 
