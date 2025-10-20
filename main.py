@@ -1,23 +1,32 @@
 """
 Gate.io Futures Trading Bot - Main Entry Point
+Grid Trading Strategy
 """
 import time
 import config
 from exchange import GateioFutures
-from strategy import RSIStrategy
+from grid_strategy import GridTradingStrategy
 
 
 class TradingBot:
     def __init__(self):
         """Initialize trading bot"""
         self.exchange = GateioFutures(testnet=config.TESTNET)
-        self.strategy = RSIStrategy(
-            period=config.RSI_PERIOD,
-            oversold=config.RSI_OVERSOLD,
-            overbought=config.RSI_OVERBOUGHT
+
+        # Grid Strategy with optimal parameters
+        self.strategy = GridTradingStrategy(
+            num_grids=30,
+            range_pct=10.0,
+            profit_per_grid=0.3,
+            max_positions=10,
+            rebalance_threshold=7.0,
+            tight_sl=True,  # 타이트한 손절
+            use_trend_filter=True,  # 추세 필터
+            dynamic_sl=True  # 동적 손절
         )
+
         self.symbol = config.SYMBOL
-        self.leverage = config.LEVERAGE
+        self.leverage = 2  # Grid strategy uses 2x leverage for safety
         self.order_size = config.ORDER_SIZE
         self.stop_loss_percent = config.STOP_LOSS_PERCENT
         self.take_profit_percent = config.TAKE_PROFIT_PERCENT
@@ -27,6 +36,7 @@ class TradingBot:
 
         print("=" * 50)
         print("Gate.io Futures Trading Bot Started")
+        print("Strategy: Grid Trading (Optimized)")
         print(f"Environment: {'TESTNET' if config.TESTNET else 'MAINNET'}")
         print("=" * 50)
 
@@ -45,11 +55,12 @@ class TradingBot:
 
         print(f"[Setup] Trading pair: {self.symbol}")
         print(f"[Setup] Order size: {self.order_size}")
-        print(f"[Setup] Strategy: RSI ({config.RSI_PERIOD})")
-        print(f"[Setup] RSI Oversold: {config.RSI_OVERSOLD}")
-        print(f"[Setup] RSI Overbought: {config.RSI_OVERBOUGHT}")
-        print(f"[Setup] Stop Loss: {self.stop_loss_percent}%")
-        print(f"[Setup] Take Profit: {self.take_profit_percent}%")
+        print(f"[Setup] Strategy: Grid Trading")
+        print(f"[Setup] Grids: 30 (±10% range)")
+        print(f"[Setup] Profit per grid: 0.3%")
+        print(f"[Setup] Max positions: 10")
+        print(f"[Setup] Tight SL: ON (1-2%)")
+        print(f"[Setup] Trend Filter: ON")
 
         return True
 
@@ -152,8 +163,22 @@ class TradingBot:
 
     def execute_trade(self, signal):
         """Execute trade based on signal"""
-        if signal == self.current_side:
-            print(f"[Trade] Already in {signal} position, skipping...")
+        # Grid strategy returns dict with signal info
+        if isinstance(signal, dict):
+            side = signal['signal']
+            tp = signal.get('take_profit', 3.0)
+            sl = signal.get('stop_loss', 2.0)
+
+            # Update TP/SL for this trade
+            self.take_profit_percent = tp
+            self.stop_loss_percent = sl
+
+            print(f"[Signal] {side.upper()} | TP: {tp}% | SL: {sl}%")
+        else:
+            side = signal
+
+        if side == self.current_side:
+            print(f"[Trade] Already in {side} position, skipping...")
             return
 
         # Close existing position if any
@@ -163,24 +188,24 @@ class TradingBot:
             time.sleep(2)  # Wait for position to close
 
         # Open new position
-        print(f"[Trade] Opening {signal.upper()} position...")
+        print(f"[Trade] Opening {side.upper()} position...")
 
         # Calculate contract size based on available balance
         contract_size = self.calculate_order_size()
 
         result = self.exchange.place_order(
             symbol=self.symbol,
-            side=signal,
+            side=side,
             size=contract_size,
             order_type='market'
         )
 
         if result:
-            print(f"[Trade] {signal.upper()} order executed successfully!")
+            print(f"[Trade] {side.upper()} order executed successfully!")
             self.in_position = True
-            self.current_side = signal
+            self.current_side = side
         else:
-            print(f"[Trade] Failed to execute {signal} order")
+            print(f"[Trade] Failed to execute {side} order")
 
     def run(self):
         """Main trading loop"""
