@@ -344,7 +344,7 @@ class MultiSymbolTradingBot:
 
                 if capital_pct == 0:
                     print("[Status] Max positions reached. Waiting for exit signals...")
-                    time.sleep(60)
+                    time.sleep(30)
                     continue
 
                 # Check signals for each symbol
@@ -390,8 +390,8 @@ class MultiSymbolTradingBot:
                     print("\n[Signal] No trading signals from any symbol")
 
                 # Wait before next iteration
-                print(f"\nWaiting 60 seconds...")
-                time.sleep(60)
+                print(f"\nWaiting 30 seconds...")
+                time.sleep(30)
 
         except KeyboardInterrupt:
             print("\n\n[Stop] Bot stopped by user")

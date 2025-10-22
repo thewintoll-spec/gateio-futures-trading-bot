@@ -31,7 +31,8 @@ class GridTradingStrategy:
 
     def __init__(self, num_grids=10, range_pct=5.0, profit_per_grid=0.5,
                  rebalance_threshold=7.0, max_positions=5, tight_sl=True,
-                 use_trend_filter=True, dynamic_sl=True):
+                 use_trend_filter=True, dynamic_sl=True, use_regime_filter=True,
+                 adx_threshold=25):
         """
         Args:
             num_grids: 그리드 개수 (기본 10개)
@@ -42,6 +43,8 @@ class GridTradingStrategy:
             tight_sl: 타이트한 손절 사용 (기본 True)
             use_trend_filter: 추세 필터 사용 (기본 True)
             dynamic_sl: 동적 손절 사용 (기본 True)
+            use_regime_filter: 시장 상태 필터 사용 (기본 True)
+            adx_threshold: ADX 임계값 (기본 25, 이상이면 추세장으로 판단)
         """
         self.num_grids = num_grids
         self.range_pct = range_pct
@@ -51,6 +54,8 @@ class GridTradingStrategy:
         self.tight_sl = tight_sl
         self.use_trend_filter = use_trend_filter
         self.dynamic_sl = dynamic_sl
+        self.use_regime_filter = use_regime_filter
+        self.adx_threshold = adx_threshold
 
         # 그리드 상태
         self.grids = []
@@ -153,6 +158,83 @@ class GridTradingStrategy:
         trend_pct = (current - ema) / ema * 100
         return trend_pct
 
+    def calculate_adx(self, candles, period=14):
+        """
+        ADX (Average Directional Index) 계산
+
+        ADX 값:
+        - 0~20: 약한 추세 또는 횡보
+        - 20~25: 추세 시작
+        - 25~50: 강한 추세
+        - 50~75: 매우 강한 추세
+        - 75~100: 극단적 추세
+
+        Returns:
+            tuple: (adx, plus_di, minus_di)
+        """
+        if len(candles) < period + 1:
+            return 0, 0, 0
+
+        highs = np.array([c['high'] for c in candles[-(period+1):]])
+        lows = np.array([c['low'] for c in candles[-(period+1):]])
+        closes = np.array([c['close'] for c in candles[-(period+1):]])
+
+        # True Range 계산
+        tr1 = highs[1:] - lows[1:]
+        tr2 = np.abs(highs[1:] - closes[:-1])
+        tr3 = np.abs(lows[1:] - closes[:-1])
+        tr = np.maximum(tr1, np.maximum(tr2, tr3))
+
+        # Directional Movement 계산
+        up_move = highs[1:] - highs[:-1]
+        down_move = lows[:-1] - lows[1:]
+
+        plus_dm = np.where((up_move > down_move) & (up_move > 0), up_move, 0)
+        minus_dm = np.where((down_move > up_move) & (down_move > 0), down_move, 0)
+
+        # Smoothed TR, +DM, -DM
+        atr = np.mean(tr)
+        plus_dm_smooth = np.mean(plus_dm)
+        minus_dm_smooth = np.mean(minus_dm)
+
+        # Directional Indicators
+        plus_di = (plus_dm_smooth / atr * 100) if atr > 0 else 0
+        minus_di = (minus_dm_smooth / atr * 100) if atr > 0 else 0
+
+        # DX (Directional Index)
+        di_sum = plus_di + minus_di
+        di_diff = abs(plus_di - minus_di)
+        dx = (di_diff / di_sum * 100) if di_sum > 0 else 0
+
+        # ADX (smoothed DX)
+        adx = dx  # 간단화: 첫 계산이므로 DX를 그대로 사용
+
+        return adx, plus_di, minus_di
+
+    def detect_market_regime(self, candles):
+        """
+        시장 상태 감지 (ADX 기반)
+
+        Returns:
+            'ranging': 횡보장 - Grid Trading 실행
+            'trending_up': 상승 추세 - 거래 중단
+            'trending_down': 하락 추세 - 거래 중단
+        """
+        if not self.use_regime_filter:
+            return 'ranging'
+
+        adx, plus_di, minus_di = self.calculate_adx(candles, 14)
+
+        # ADX가 임계값보다 낮으면 횡보장
+        if adx < self.adx_threshold:
+            return 'ranging'
+
+        # ADX가 높으면 추세장 → 방향 확인
+        if plus_di > minus_di:
+            return 'trending_up'
+        else:
+            return 'trending_down'
+
     def is_strong_trend(self, candles):
         """강한 추세 여부 판단"""
         if not self.use_trend_filter:
@@ -204,6 +286,22 @@ class GridTradingStrategy:
         if not self.grids or self.should_rebalance(current_price, current_time):
             self.initialize_grids(current_price)
             return None
+
+        # 시장 상태 필터: ADX 기반 횡보/추세 판단
+        regime = self.detect_market_regime(candles)
+
+        if regime == 'trending_up':
+            adx, plus_di, minus_di = self.calculate_adx(candles, 14)
+            print(f"  [시장필터] 상승 추세 감지 - 거래 중단 (ADX: {adx:.1f}, +DI: {plus_di:.1f}, -DI: {minus_di:.1f})")
+            return None
+        elif regime == 'trending_down':
+            adx, plus_di, minus_di = self.calculate_adx(candles, 14)
+            print(f"  [시장필터] 하락 추세 감지 - 거래 중단 (ADX: {adx:.1f}, +DI: {plus_di:.1f}, -DI: {minus_di:.1f})")
+            return None
+        else:
+            # 횡보장 - Grid Trading 실행
+            adx, plus_di, minus_di = self.calculate_adx(candles, 14)
+            print(f"  [시장필터] 횡보장 감지 - Grid Trading 실행 (ADX: {adx:.1f})")
 
         # 추세 필터: 강한 추세 시 거래 제한
         trend = self.is_strong_trend(candles)

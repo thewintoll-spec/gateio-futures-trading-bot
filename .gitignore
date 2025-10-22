@@ -1,7 +1,7 @@
-# API Keys and sensitive data
+# API Keys and Secrets
 config.py
+*.env
 .env
-*.key
 
 # Python
 __pycache__/
@@ -9,21 +9,24 @@ __pycache__/
 *$py.class
 *.so
 .Python
-venv/
 env/
+venv/
 ENV/
+
+# Logs and Data
+*.log
+*.jsonl
+trades_*.jsonl
+*.txt
+optimization_*.txt
 
 # IDE
 .vscode/
 .idea/
 *.swp
 *.swo
+*~
 
-# Logs
-*.log
-logs/
-
-# Trading data
-data/
-*.db
-*.sqlite
+# OS
+.DS_Store
+Thumbs.db

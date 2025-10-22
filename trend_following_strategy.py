@@ -1,154 +1,120 @@
+# -*- coding: utf-8 -*-
 """
-추세추종 전략 (Trend Following Strategy)
+Trend Following Strategy
 
-핵심 아이디어:
-- RSI 평균회귀 대신 → 추세를 따라가기
-- 상승 추세 → 롱
-- 하락 추세 → 숏
-- 추세가 꺾이면 청산
+Strategy Logic:
+- Follow trends using EMA crossover
+- Long in uptrends, Short in downtrends
+- Use trailing stop to protect profits
 
-지표:
-- EMA (지수이동평균) 크로스오버
-- ADX (추세 강도)
-- 가격 모멘텀
+Indicators:
+- EMA (Exponential Moving Average)
+- ADX (Average Directional Index)
+- ATR (Average True Range)
+
+Entry:
+- Golden Cross + ADX > 25 -> Long
+- Death Cross + ADX > 25 -> Short
+
+Exit:
+- EMA reversal crossover
+- ATR-based trailing stop
 """
 import numpy as np
-from datetime import datetime, timedelta
 
 
 class TrendFollowingStrategy:
     """
-    추세추종 전략
+    Trend Following Strategy
 
-    핵심:
-    - 빠른 EMA(12) > 느린 EMA(26) → 상승 추세 → 롱
-    - 빠른 EMA(12) < 느린 EMA(26) → 하락 추세 → 숏
-    - ADX로 추세 강도 확인 (약한 추세는 거래 안 함)
+    Logic:
+    1. Detect EMA crossover for trend direction
+    2. Confirm with ADX for trend strength
+    3. Enter in direction of strong trend
+    4. Use trailing stop to protect profits
     """
 
-    def __init__(self, fast_period=12, slow_period=26, adx_period=14, adx_threshold=25):
+    def __init__(self, fast_ema=12, slow_ema=26, adx_threshold=25,
+                 trailing_stop_atr=2.0, min_profit_before_trail=1.0):
         """
         Args:
-            fast_period: 빠른 EMA 기간
-            slow_period: 느린 EMA 기간
-            adx_period: ADX 기간
-            adx_threshold: ADX 임계값 (이보다 높으면 추세 강함)
+            fast_ema: Fast EMA period (default 12)
+            slow_ema: Slow EMA period (default 26)
+            adx_threshold: ADX threshold (default 25)
+            trailing_stop_atr: Trailing stop ATR multiplier (default 2.0)
+            min_profit_before_trail: Min profit % before trailing (default 1.0%)
         """
-        self.fast_period = fast_period
-        self.slow_period = slow_period
-        self.adx_period = adx_period
+        self.fast_ema = fast_ema
+        self.slow_ema = slow_ema
         self.adx_threshold = adx_threshold
-        self.period = max(fast_period, slow_period, adx_period) + 1
+        self.trailing_stop_atr = trailing_stop_atr
+        self.min_profit_before_trail = min_profit_before_trail
 
-        # 거래 제어
-        self.last_trade_time = None
-        self.min_trade_interval = 900  # 15분 간격
+        # Position tracking
+        self.position = None  # {'side': 'long/short', 'entry_price': float, 'highest': float, 'lowest': float}
 
-        # 손실 관리
-        self.consecutive_losses = 0
-        self.cooldown_until = None
+        # Required period
+        self.period = max(slow_ema, 26)
 
-    def calculate_ema(self, prices, period):
-        """EMA 계산 (지수이동평균)"""
-        if len(prices) < period:
+    def calculate_ema(self, data, period):
+        """Calculate EMA"""
+        if len(data) < period:
             return None
 
-        prices = np.array(prices)
-        ema = np.zeros(len(prices))
+        # Simple EMA calculation (exponential weights)
+        weights = np.exp(np.linspace(-1., 0., period))
+        weights /= weights.sum()
 
-        # 첫 EMA는 SMA로 시작
-        ema[period-1] = np.mean(prices[:period])
-
-        # 지수 가중치
-        multiplier = 2 / (period + 1)
-
-        # 나머지 EMA 계산
-        for i in range(period, len(prices)):
-            ema[i] = (prices[i] - ema[i-1]) * multiplier + ema[i-1]
-
-        return ema[-1]
+        ema = np.convolve(data, weights, mode='valid')
+        return ema[-1] if len(ema) > 0 else None
 
     def calculate_adx(self, candles, period=14):
-        """
-        ADX 계산 (Average Directional Index)
-
-        추세 강도를 측정:
-        - ADX < 20: 약한 추세 (횡보)
-        - ADX 20-40: 중간 추세
-        - ADX > 40: 강한 추세
-        """
+        """Calculate ADX"""
         if len(candles) < period + 1:
-            return None
+            return 0, 0, 0
 
-        highs = np.array([c['high'] for c in candles])
-        lows = np.array([c['low'] for c in candles])
-        closes = np.array([c['close'] for c in candles])
+        highs = np.array([c['high'] for c in candles[-(period+1):]])
+        lows = np.array([c['low'] for c in candles[-(period+1):]])
+        closes = np.array([c['close'] for c in candles[-(period+1):]])
 
-        # +DM, -DM 계산
-        high_diff = np.diff(highs)
-        low_diff = -np.diff(lows)
-
-        plus_dm = np.where((high_diff > low_diff) & (high_diff > 0), high_diff, 0)
-        minus_dm = np.where((low_diff > high_diff) & (low_diff > 0), low_diff, 0)
-
-        # True Range 계산
+        # True Range
         tr1 = highs[1:] - lows[1:]
         tr2 = np.abs(highs[1:] - closes[:-1])
         tr3 = np.abs(lows[1:] - closes[:-1])
         tr = np.maximum(tr1, np.maximum(tr2, tr3))
 
-        # ATR (Average True Range)
-        atr = np.mean(tr[-period:])
+        # Directional Movement
+        up_move = highs[1:] - highs[:-1]
+        down_move = lows[:-1] - lows[1:]
 
-        if atr == 0:
-            return None
+        plus_dm = np.where((up_move > down_move) & (up_move > 0), up_move, 0)
+        minus_dm = np.where((down_move > up_move) & (down_move > 0), down_move, 0)
 
-        # +DI, -DI 계산
-        plus_di = 100 * np.mean(plus_dm[-period:]) / atr
-        minus_di = 100 * np.mean(minus_dm[-period:]) / atr
+        # Smoothed
+        atr = np.mean(tr)
+        plus_dm_smooth = np.mean(plus_dm)
+        minus_dm_smooth = np.mean(minus_dm)
 
-        # DX 계산
-        dx = 100 * abs(plus_di - minus_di) / (plus_di + minus_di) if (plus_di + minus_di) > 0 else 0
+        # DI
+        plus_di = (plus_dm_smooth / atr * 100) if atr > 0 else 0
+        minus_di = (minus_dm_smooth / atr * 100) if atr > 0 else 0
 
-        # ADX는 DX의 이동평균 (간단히 현재값 반환)
-        return dx
+        # ADX
+        di_sum = plus_di + minus_di
+        di_diff = abs(plus_di - minus_di)
+        dx = (di_diff / di_sum * 100) if di_sum > 0 else 0
+        adx = dx
 
-    def calculate_momentum(self, prices, period=10):
-        """가격 모멘텀 계산"""
-        if len(prices) < period + 1:
+        return adx, plus_di, minus_di
+
+    def calculate_atr(self, candles, period=14):
+        """Calculate ATR"""
+        if len(candles) < period + 1:
             return 0
 
-        current = prices[-1]
-        past = prices[-period-1]
-        momentum = (current - past) / past * 100
-        return momentum
-
-    def get_tp_sl(self, side, atr_pct):
-        """
-        동적 TP/SL (ATR 기반)
-
-        추세추종은 큰 수익을 노림:
-        - TP: ATR의 3배 (추세를 오래 타기)
-        - SL: ATR의 1.5배 (빠른 손절)
-        """
-        # ATR 기반 배수
-        tp_multiplier = 3.0
-        sl_multiplier = 1.5
-
-        # 최소/최대 제한
-        take_profit = max(3.0, min(10.0, atr_pct * tp_multiplier))
-        stop_loss = max(1.5, min(4.0, atr_pct * sl_multiplier))
-
-        return round(take_profit, 1), round(stop_loss, 1)
-
-    def calculate_atr_percent(self, candles, period=14):
-        """ATR을 가격 대비 퍼센트로 계산"""
-        if len(candles) < period + 1:
-            return 2.0  # 기본값
-
-        highs = np.array([c['high'] for c in candles[-period-1:]])
-        lows = np.array([c['low'] for c in candles[-period-1:]])
-        closes = np.array([c['close'] for c in candles[-period-1:]])
+        highs = np.array([c['high'] for c in candles[-(period+1):]])
+        lows = np.array([c['low'] for c in candles[-(period+1):]])
+        closes = np.array([c['close'] for c in candles[-(period+1):]])
 
         tr1 = highs[1:] - lows[1:]
         tr2 = np.abs(highs[1:] - closes[:-1])
@@ -156,128 +122,178 @@ class TrendFollowingStrategy:
         tr = np.maximum(tr1, np.maximum(tr2, tr3))
 
         atr = np.mean(tr)
-        current_price = closes[-1]
+        return atr
 
-        atr_pct = (atr / current_price) * 100
-        return atr_pct
-
-    def update_trade_result(self, result):
-        """거래 결과 업데이트"""
-        now = datetime.now()
-
-        if result == 'loss':
-            self.consecutive_losses += 1
-            print(f"  [손실] 연속 손실: {self.consecutive_losses}")
-
-            # 3연속 손실 시 1시간 휴식
-            if self.consecutive_losses >= 3:
-                self.cooldown_until = now + timedelta(hours=1)
-                print(f"  [휴식 모드] 3연속 손실 - 1시간 거래 중지")
-        else:
-            self.consecutive_losses = 0
-            print(f"  [승리] 연속 손실 리셋")
-
-    def is_in_cooldown(self):
-        """휴식 모드 확인"""
-        if self.cooldown_until is None:
-            return False
-
-        now = datetime.now()
-        if now < self.cooldown_until:
-            remaining = (self.cooldown_until - now).total_seconds() / 60
-            print(f"  [휴식 모드] 남은 시간: {remaining:.0f}분")
-            return True
-        else:
-            self.cooldown_until = None
-            print(f"  [휴식 종료] 거래 재개")
-            return False
-
-    def analyze(self, candles):
+    def analyze(self, candles, direction='both'):
         """
-        추세추종 신호 생성
+        Trend following analysis
+
+        Args:
+            candles: candle data
+            direction: 'both', 'long', 'short'
 
         Returns:
-            dict: {'signal': 'long'/'short', 'take_profit': float, 'stop_loss': float}
-            또는 None
+            dict: {'signal': 'long'/'short'/'close', 'take_profit': float, 'stop_loss': float}
+            or None
         """
-        if not candles or len(candles) < self.period:
+        if not candles or len(candles) < self.slow_ema + 1:
             return None
 
-        # 휴식 모드 체크
-        if self.is_in_cooldown():
-            return None
+        # Current price
+        current_price = candles[-1]['close']
 
-        closes = [c['close'] for c in candles]
-
-        # EMA 계산
-        fast_ema = self.calculate_ema(closes, self.fast_period)
-        slow_ema = self.calculate_ema(closes, self.slow_period)
+        # Calculate EMAs
+        closes = np.array([c['close'] for c in candles])
+        fast_ema = self.calculate_ema(closes, self.fast_ema)
+        slow_ema = self.calculate_ema(closes, self.slow_ema)
 
         if fast_ema is None or slow_ema is None:
             return None
 
-        # ADX 계산 (추세 강도)
-        adx = self.calculate_adx(candles, self.adx_period)
-        if adx is None:
+        # Previous EMAs
+        if len(candles) < self.slow_ema + 2:
             return None
 
-        # 모멘텀 계산
-        momentum = self.calculate_momentum(closes, 10)
+        closes_prev = np.array([c['close'] for c in candles[:-1]])
+        fast_ema_prev = self.calculate_ema(closes_prev, self.fast_ema)
+        slow_ema_prev = self.calculate_ema(closes_prev, self.slow_ema)
 
-        # ATR 계산 (동적 TP/SL용)
-        atr_pct = self.calculate_atr_percent(candles, 14)
+        # Calculate ADX
+        adx, plus_di, minus_di = self.calculate_adx(candles, 14)
 
-        # 거래 빈도 제어
-        current_time = candles[-1].get('timestamp', candles[-1].get('datetime'))
-        if self.last_trade_time:
-            if isinstance(current_time, (int, float)):
-                time_diff = current_time - self.last_trade_time
-            else:
-                time_diff = (current_time - self.last_trade_time).total_seconds()
+        # Calculate ATR
+        atr = self.calculate_atr(candles, 14)
+        atr_pct = (atr / current_price * 100)
 
-            if time_diff < self.min_trade_interval:
-                return None
+        # Golden Cross (fast EMA crosses above slow EMA)
+        golden_cross = (fast_ema_prev <= slow_ema_prev) and (fast_ema > slow_ema)
 
-        # EMA 차이 (퍼센트)
-        ema_diff_pct = (fast_ema - slow_ema) / slow_ema * 100
+        # Death Cross (fast EMA crosses below slow EMA)
+        death_cross = (fast_ema_prev >= slow_ema_prev) and (fast_ema < slow_ema)
 
-        print(f"EMA12: {fast_ema:.2f}, EMA26: {slow_ema:.2f}, Diff: {ema_diff_pct:+.2f}%, "
-              f"ADX: {adx:.1f}, Mom: {momentum:+.2f}%")
+        # ===== Entry Signals =====
 
-        # ===== 롱 진입 조건 =====
-        # 1. 빠른 EMA > 느린 EMA (상승 추세)
-        # 2. ADX > 임계값 (추세가 충분히 강함)
-        # 3. 모멘텀 > 0 (상승 모멘텀)
-        if fast_ema > slow_ema and adx > self.adx_threshold and momentum > 0.5:
-            tp, sl = self.get_tp_sl('long', atr_pct)
-            print(f"  [LONG] 상승 추세, ADX: {adx:.1f}, TP: {tp}%, SL: {sl}%")
-            self.last_trade_time = current_time
-            return {'signal': 'long', 'take_profit': tp, 'stop_loss': sl}
+        # Long Entry
+        if golden_cross and adx >= self.adx_threshold and direction in ['both', 'long']:
+            print(f"\n[TREND LONG] Golden Cross + Strong Trend")
+            print(f"  Fast EMA: {fast_ema:.2f}, Slow EMA: {slow_ema:.2f}")
+            print(f"  ADX: {adx:.1f}, +DI: {plus_di:.1f}, -DI: {minus_di:.1f}")
 
-        # ===== 숏 진입 조건 =====
-        # 1. 빠른 EMA < 느린 EMA (하락 추세)
-        # 2. ADX > 임계값 (추세가 충분히 강함)
-        # 3. 모멘텀 < 0 (하락 모멘텀)
-        elif fast_ema < slow_ema and adx > self.adx_threshold and momentum < -0.5:
-            tp, sl = self.get_tp_sl('short', atr_pct)
-            print(f"  [SHORT] 하락 추세, ADX: {adx:.1f}, TP: {tp}%, SL: {sl}%")
-            self.last_trade_time = current_time
-            return {'signal': 'short', 'take_profit': tp, 'stop_loss': sl}
+            # Stop Loss: ATR multiplier
+            sl_pct = atr_pct * 2.0
 
-        # 추세가 약하면 거래 안 함
-        if adx < self.adx_threshold:
-            print(f"  [SKIP] 약한 추세 (ADX: {adx:.1f} < {self.adx_threshold})")
+            # Take Profit: 2x stop loss
+            tp_pct = sl_pct * 2.0
+
+            self.position = {
+                'side': 'long',
+                'entry_price': current_price,
+                'highest': current_price,
+                'lowest': current_price
+            }
+
+            return {
+                'signal': 'long',
+                'take_profit': tp_pct,
+                'stop_loss': sl_pct,
+                'reason': 'golden_cross'
+            }
+
+        # Short Entry
+        elif death_cross and adx >= self.adx_threshold and direction in ['both', 'short']:
+            print(f"\n[TREND SHORT] Death Cross + Strong Trend")
+            print(f"  Fast EMA: {fast_ema:.2f}, Slow EMA: {slow_ema:.2f}")
+            print(f"  ADX: {adx:.1f}, +DI: {plus_di:.1f}, -DI: {minus_di:.1f}")
+
+            # Stop Loss: ATR multiplier
+            sl_pct = atr_pct * 2.0
+
+            # Take Profit: 2x stop loss
+            tp_pct = sl_pct * 2.0
+
+            self.position = {
+                'side': 'short',
+                'entry_price': current_price,
+                'highest': current_price,
+                'lowest': current_price
+            }
+
+            return {
+                'signal': 'short',
+                'take_profit': tp_pct,
+                'stop_loss': sl_pct,
+                'reason': 'death_cross'
+            }
+
+        # ===== Position Management (Trailing Stop) =====
+
+        if self.position:
+            side = self.position['side']
+            entry_price = self.position['entry_price']
+
+            # Update highest/lowest prices
+            self.position['highest'] = max(self.position['highest'], current_price)
+            self.position['lowest'] = min(self.position['lowest'], current_price)
+
+            # Current PnL
+            if side == 'long':
+                pnl_pct = (current_price - entry_price) / entry_price * 100
+
+                # Exit on reversal crossover
+                if death_cross:
+                    print(f"\n[TREND EXIT] Death Cross - Close Long")
+                    self.position = None
+                    return {
+                        'signal': 'close',
+                        'reason': 'trend_reversal'
+                    }
+
+                # Trailing stop (after min profit)
+                if pnl_pct >= self.min_profit_before_trail:
+                    trail_stop_price = self.position['highest'] - (atr * self.trailing_stop_atr)
+                    if current_price <= trail_stop_price:
+                        print(f"\n[TREND EXIT] Trailing Stop - Close Long (PnL: {pnl_pct:.2f}%)")
+                        self.position = None
+                        return {
+                            'signal': 'close',
+                            'reason': 'trailing_stop'
+                        }
+
+            elif side == 'short':
+                pnl_pct = (entry_price - current_price) / entry_price * 100
+
+                # Exit on reversal crossover
+                if golden_cross:
+                    print(f"\n[TREND EXIT] Golden Cross - Close Short")
+                    self.position = None
+                    return {
+                        'signal': 'close',
+                        'reason': 'trend_reversal'
+                    }
+
+                # Trailing stop
+                if pnl_pct >= self.min_profit_before_trail:
+                    trail_stop_price = self.position['lowest'] + (atr * self.trailing_stop_atr)
+                    if current_price >= trail_stop_price:
+                        print(f"\n[TREND EXIT] Trailing Stop - Close Short (PnL: {pnl_pct:.2f}%)")
+                        self.position = None
+                        return {
+                            'signal': 'close',
+                            'reason': 'trailing_stop'
+                        }
 
         return None
 
 
 if __name__ == "__main__":
-    print("추세추종 전략 (Trend Following Strategy)")
-    print("\n핵심 로직:")
-    print("- EMA12 > EMA26 + 강한 ADX → LONG (상승 추세)")
-    print("- EMA12 < EMA26 + 강한 ADX → SHORT (하락 추세)")
-    print("- ADX < 25 → 거래 안 함 (약한 추세)")
-    print("\nTP/SL:")
-    print("- TP: ATR의 3배 (큰 수익 노림)")
-    print("- SL: ATR의 1.5배 (빠른 손절)")
-    print("\n레버리지 권장: 3배")
+    print("Trend Following Strategy")
+    print("\nStrategy Logic:")
+    print("- Golden Cross: fast EMA > slow EMA -> Long")
+    print("- Death Cross: fast EMA < slow EMA -> Short")
+    print("- ADX > 25: Strong trend confirmation")
+    print("- Trailing Stop: Protect profits")
+    print("\nFeatures:")
+    print("- Works best in trending markets")
+    print("- Clear entry/exit signals")
+    print("- Dynamic profit protection")
+    print("\nRecommended Period: 20+ (for EMA stability)")
