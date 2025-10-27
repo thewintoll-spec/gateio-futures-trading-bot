@@ -1,17 +1,17 @@
 # -*- coding: utf-8 -*-
 """
-Adaptive Multi-Regime Strategy
+적응형 멀티 시장 전략 (Adaptive Multi-Regime Strategy)
 
-Strategy Logic:
-- Detect market regime and switch strategies
-- Ranging: Grid Trading
-- Uptrend: Trend Following (Long Only)
-- Downtrend: Trend Following (Short Only) or Wait
+전략 로직:
+- 시장 상태를 감지하여 자동으로 전략 전환
+- 횡보장: 그리드 트레이딩
+- 상승 추세: 추세 추종 (롱만)
+- 하락 추세: 추세 추종 (숏만) 또는 대기
 
-Features:
-- Auto regime detection based on ADX
-- Dynamic strategy switching
-- Optimized for each market condition
+특징:
+- ADX 기반 자동 시장 감지
+- 동적 전략 전환
+- 각 시장 상황에 최적화
 """
 import numpy as np
 from grid_strategy import GridTradingStrategy
@@ -20,25 +20,25 @@ from trend_following_strategy import TrendFollowingStrategy
 
 class AdaptiveStrategy:
     """
-    Adaptive Multi-Regime Strategy
+    적응형 멀티 시장 전략
 
-    Logic:
-    1. Detect market regime with ADX (ranging/trending)
-    2. Ranging -> Grid Trading
-    3. Uptrend -> Trend Following (Long)
-    4. Downtrend -> Trend Following (Short) or Wait
+    로직:
+    1. ADX로 시장 상태 감지 (횡보/추세)
+    2. 횡보장 -> 그리드 트레이딩
+    3. 상승 추세 -> 추세 추종 (롱)
+    4. 하락 추세 -> 추세 추종 (숏) 또는 대기
     """
 
     def __init__(self, adx_threshold=25, allow_short_in_downtrend=True):
         """
         Args:
-            adx_threshold: ADX threshold (default 25)
-            allow_short_in_downtrend: Allow short in downtrend (default True)
+            adx_threshold: ADX 임계값 (기본 25)
+            allow_short_in_downtrend: 하락장에서 숏 허용 (기본 True)
         """
         self.adx_threshold = adx_threshold
         self.allow_short_in_downtrend = allow_short_in_downtrend
 
-        # Initialize sub-strategies
+        # 하위 전략 초기화
         self.grid_strategy = GridTradingStrategy(
             num_grids=30,
             range_pct=10.0,
@@ -48,7 +48,7 @@ class AdaptiveStrategy:
             tight_sl=True,
             use_trend_filter=True,
             dynamic_sl=True,
-            use_regime_filter=False  # Adaptive handles regime detection
+            use_regime_filter=False  # Adaptive가 시장 감지 담당
         )
 
         self.trend_strategy = TrendFollowingStrategy(
@@ -59,15 +59,15 @@ class AdaptiveStrategy:
             min_profit_before_trail=1.0
         )
 
-        # Current state
+        # 현재 상태
         self.current_regime = None
         self.current_strategy = None
 
-        # Required period
+        # 필요한 캔들 수
         self.period = max(self.grid_strategy.period, self.trend_strategy.period)
 
     def calculate_adx(self, candles, period=14):
-        """Calculate ADX"""
+        """ADX 계산"""
         if len(candles) < period + 1:
             return 0, 0, 0
 
@@ -107,21 +107,21 @@ class AdaptiveStrategy:
 
     def detect_market_regime(self, candles):
         """
-        Detect market regime
+        시장 상태 감지
 
         Returns:
-            'ranging': Ranging market
-            'trending_up': Uptrend
-            'trending_down': Downtrend
+            'ranging': 횡보장
+            'trending_up': 상승 추세
+            'trending_down': 하락 추세
         """
         adx, plus_di, minus_di = self.calculate_adx(candles, 14)
 
-        # ADX < threshold: Ranging
+        # ADX < 임계값: 횡보장
         if adx < self.adx_threshold:
             return 'ranging', adx, plus_di, minus_di
 
-        # ADX >= threshold: Trending
-        # Check +DI vs -DI for direction
+        # ADX >= 임계값: 추세장
+        # +DI vs -DI로 방향 판단
         if plus_di > minus_di:
             return 'trending_up', adx, plus_di, minus_di
         else:
@@ -129,71 +129,71 @@ class AdaptiveStrategy:
 
     def analyze(self, candles):
         """
-        Adaptive strategy analysis
+        적응형 전략 분석
 
-        Detect market regime and delegate to appropriate strategy
+        시장 상태를 감지하여 적절한 전략에 위임
 
         Returns:
             dict: {'signal': 'long'/'short'/'close', 'take_profit': float, 'stop_loss': float}
-            or None
+            또는 None
         """
         if not candles or len(candles) < self.period:
             return None
 
-        # Detect market regime
+        # 시장 상태 감지
         regime, adx, plus_di, minus_di = self.detect_market_regime(candles)
 
-        # Log regime changes
+        # 시장 상태 변경 로그
         if regime != self.current_regime:
             print(f"\n{'='*60}")
-            print(f"[REGIME CHANGE] {self.current_regime} -> {regime}")
+            print(f"[시장 변화] {self.current_regime} -> {regime}")
             print(f"  ADX: {adx:.1f}, +DI: {plus_di:.1f}, -DI: {minus_di:.1f}")
             print(f"{'='*60}")
             self.current_regime = regime
 
-        # ===== Ranging: Grid Trading =====
+        # ===== 횡보장: 그리드 트레이딩 =====
         if regime == 'ranging':
-            print(f"[ADAPTIVE] Ranging Market (ADX: {adx:.1f}) - Grid Trading")
+            print(f"[적응형] 횡보장 (ADX: {adx:.1f}) - 그리드 트레이딩")
             self.current_strategy = 'grid'
             return self.grid_strategy.analyze(candles)
 
-        # ===== Uptrend: Trend Following (Long Only) =====
+        # ===== 상승 추세: 추세 추종 (롱만) =====
         elif regime == 'trending_up':
-            print(f"[ADAPTIVE] Uptrend (ADX: {adx:.1f}) - Trend Following (Long)")
+            print(f"[적응형] 상승 추세 (ADX: {adx:.1f}) - 추세 추종 (롱)")
             self.current_strategy = 'trend_long'
             return self.trend_strategy.analyze(candles, direction='long')
 
-        # ===== Downtrend: Short or Wait =====
+        # ===== 하락 추세: 숏 또는 대기 =====
         elif regime == 'trending_down':
             if self.allow_short_in_downtrend:
-                print(f"[ADAPTIVE] Downtrend (ADX: {adx:.1f}) - Trend Following (Short)")
+                print(f"[적응형] 하락 추세 (ADX: {adx:.1f}) - 추세 추종 (숏)")
                 self.current_strategy = 'trend_short'
                 return self.trend_strategy.analyze(candles, direction='short')
             else:
-                print(f"[ADAPTIVE] Downtrend (ADX: {adx:.1f}) - Waiting (No Short)")
+                print(f"[적응형] 하락 추세 (ADX: {adx:.1f}) - 대기 (숏 금지)")
                 self.current_strategy = 'wait'
                 return None
 
         return None
 
     def get_current_strategy(self):
-        """Get current active strategy"""
+        """현재 활성 전략 반환"""
         return self.current_strategy
 
     def get_current_regime(self):
-        """Get current market regime"""
+        """현재 시장 상태 반환"""
         return self.current_regime
 
 
 if __name__ == "__main__":
-    print("Adaptive Multi-Regime Strategy")
-    print("\nStrategy Logic:")
-    print("- ADX < 25: Ranging -> Grid Trading")
-    print("- ADX >= 25 & +DI > -DI: Uptrend -> Trend Following (Long)")
-    print("- ADX >= 25 & +DI < -DI: Downtrend -> Trend Following (Short)")
-    print("\nFeatures:")
-    print("- Auto regime detection")
-    print("- Dynamic strategy switching")
-    print("- Optimized for each market condition")
-    print("- Best of both worlds")
-    print("\nRecommended Period: 20+ (for indicator stability)")
+    print("적응형 멀티 시장 전략")
+    print("\n전략 로직:")
+    print("- ADX < 25: 횡보장 -> 그리드 트레이딩")
+    print("- ADX >= 25 & +DI > -DI: 상승 추세 -> 추세 추종 (롱)")
+    print("- ADX >= 25 & +DI < -DI: 하락 추세 -> 추세 추종 (숏)")
+    print("\n특징:")
+    print("- 자동 시장 감지")
+    print("- 동적 전략 전환")
+    print("- 각 시장 상황에 최적화")
+    print("- 두 전략의 장점 결합")
+    print("\n권장 캔들 수: 20+ (지표 안정성)")

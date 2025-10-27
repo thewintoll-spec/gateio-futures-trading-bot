@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Gate.io Futures Trading Bot - Live Dashboard
+Gate.io 선물 트레이딩 봇 - 실시간 대시보드
 방송용 실시간 포지션 및 잔액 표시
 """
 import tkinter as tk
@@ -17,22 +17,22 @@ class TradingDashboard:
         self.root.geometry("800x600")
         self.root.configure(bg='#1e1e1e')
 
-        # Exchange
+        # 거래소
         self.exchange = GateioFutures(testnet=config.TESTNET)
         self.symbols = ['BTC_USDT', 'ETH_USDT']
 
-        # Data
+        # 데이터
         self.balance_data = {}
         self.positions_data = {}
         self.prices = {}
 
         self.setup_ui()
-        # Start update loop using tkinter's after method
+        # tkinter의 after 메서드로 업데이트 루프 시작
         self.root.after(1000, self.update_loop)
 
     def setup_ui(self):
-        """Setup UI components"""
-        # Title
+        """UI 컴포넌트 설정"""
+        # 제목
         title = tk.Label(
             self.root,
             text="🤖 Gate.io Futures Bot",
@@ -42,13 +42,13 @@ class TradingDashboard:
         )
         title.pack(pady=20)
 
-        # Balance Frame
+        # 잔고 프레임
         balance_frame = tk.Frame(self.root, bg='#2d2d2d', relief=tk.RAISED, borderwidth=2)
         balance_frame.pack(pady=10, padx=20, fill=tk.X)
 
         tk.Label(
             balance_frame,
-            text="💰 Account Balance",
+            text="💰 계좌 잔고",
             font=('Arial', 16, 'bold'),
             bg='#2d2d2d',
             fg='#ffffff'
@@ -56,7 +56,7 @@ class TradingDashboard:
 
         self.balance_label = tk.Label(
             balance_frame,
-            text="Loading...",
+            text="로딩 중...",
             font=('Arial', 14),
             bg='#2d2d2d',
             fg='#00ff00'
@@ -65,33 +65,33 @@ class TradingDashboard:
 
         self.available_label = tk.Label(
             balance_frame,
-            text="Available: Loading...",
+            text="사용 가능: 로딩 중...",
             font=('Arial', 12),
             bg='#2d2d2d',
             fg='#ffffff'
         )
         self.available_label.pack(pady=2)
 
-        # Positions Frame
+        # 포지션 프레임
         positions_frame = tk.Frame(self.root, bg='#2d2d2d', relief=tk.RAISED, borderwidth=2)
         positions_frame.pack(pady=10, padx=20, fill=tk.BOTH, expand=True)
 
         tk.Label(
             positions_frame,
-            text="📊 Active Positions",
+            text="📊 활성 포지션",
             font=('Arial', 16, 'bold'),
             bg='#2d2d2d',
             fg='#ffffff'
         ).pack(pady=5)
 
-        # Positions list
+        # 포지션 목록
         self.positions_frame_inner = tk.Frame(positions_frame, bg='#2d2d2d')
         self.positions_frame_inner.pack(pady=10, padx=10, fill=tk.BOTH, expand=True)
 
-        # Status bar
+        # 상태 바
         self.status_label = tk.Label(
             self.root,
-            text="Last Update: N/A",
+            text="마지막 업데이트: N/A",
             font=('Arial', 10),
             bg='#1e1e1e',
             fg='#888888'
@@ -99,7 +99,7 @@ class TradingDashboard:
         self.status_label.pack(side=tk.BOTTOM, pady=5)
 
     def update_balance(self):
-        """Update balance display"""
+        """잔고 표시 업데이트"""
         try:
             balance = self.exchange.get_account_balance()
 
@@ -110,22 +110,22 @@ class TradingDashboard:
                 available = float(balance['available'])
 
                 self.balance_label.config(
-                    text=f"Total: {total:.2f} USDT",
+                    text=f"총액: {total:.2f} USDT",
                     fg='#00ff00' if total > 1000 else '#ffaa00'
                 )
 
                 self.available_label.config(
-                    text=f"Available: {available:.2f} USDT | In Use: {total - available:.2f} USDT"
+                    text=f"사용 가능: {available:.2f} USDT | 사용 중: {total - available:.2f} USDT"
                 )
             else:
-                self.balance_label.config(text="Error: No balance data", fg='#ff4444')
+                self.balance_label.config(text="오류: 잔고 데이터 없음", fg='#ff4444')
         except Exception as e:
-            self.balance_label.config(text=f"Error: {str(e)}", fg='#ff4444')
+            self.balance_label.config(text=f"오류: {str(e)}", fg='#ff4444')
 
     def update_positions(self):
-        """Update positions display"""
+        """포지션 표시 업데이트"""
         try:
-            # Clear previous positions
+            # 이전 포지션 제거
             for widget in self.positions_frame_inner.winfo_children():
                 widget.destroy()
 
@@ -143,7 +143,7 @@ class TradingDashboard:
                     active_positions += 1
                     self.positions_data[symbol] = position
 
-                    # Create position card
+                    # 포지션 카드 생성
                     card = tk.Frame(
                         self.positions_frame_inner,
                         bg='#3d3d3d',
@@ -152,46 +152,46 @@ class TradingDashboard:
                     )
                     card.pack(pady=5, padx=5, fill=tk.X)
 
-                    side = 'LONG' if position['size'] > 0 else 'SHORT'
-                    side_color = '#00ff00' if side == 'LONG' else '#ff4444'
+                    side = '롱' if position['size'] > 0 else '숏'
+                    side_color = '#00ff00' if side == '롱' else '#ff4444'
 
                     pnl = position['unrealised_pnl']
                     margin = position.get('margin', 0)
                     pnl_percent = (pnl / margin * 100) if margin > 0 else 0
                     pnl_color = '#00ff00' if pnl > 0 else '#ff4444'
 
-                    # Symbol, Side, and Leverage
-                    leverage = position.get('leverage', '?')  # Use actual leverage from API
+                    # 심볼, 방향, 레버리지
+                    leverage = position.get('leverage', '?')  # API에서 실제 레버리지 사용
                     header = tk.Label(
                         card,
-                        text=f"{symbol.replace('_', '/')} | {side} | {leverage}x",
+                        text=f"{symbol.replace('_', '/')} | {side} | {leverage}배",
                         font=('Arial', 14, 'bold'),
                         bg='#3d3d3d',
                         fg=side_color
                     )
                     header.pack(anchor=tk.W, padx=10, pady=5)
 
-                    # Entry Price
+                    # 진입가
                     entry = tk.Label(
                         card,
-                        text=f"Entry: ${position['entry_price']:.2f} | Current: ${price:.2f}",
+                        text=f"진입: ${position['entry_price']:.2f} | 현재: ${price:.2f}",
                         font=('Arial', 11),
                         bg='#3d3d3d',
                         fg='#ffffff'
                     )
                     entry.pack(anchor=tk.W, padx=10)
 
-                    # Size and Margin
-                    # Convert contract size to actual coin amount
+                    # 사이즈 및 마진
+                    # 계약 사이즈를 실제 코인 수량으로 변환
                     asset = symbol.split('_')[0]
                     contract_size = abs(position['size'])
 
                     if asset == 'BTC':
-                        # BTC: 1 contract = 0.0001 BTC
+                        # BTC: 1 계약 = 0.0001 BTC
                         coin_amount = contract_size * 0.0001
                         size_display = f"{coin_amount:g} BTC"
                     elif asset == 'ETH':
-                        # ETH: 1 contract = 0.01 ETH
+                        # ETH: 1 계약 = 0.01 ETH
                         coin_amount = contract_size * 0.01
                         size_display = f"{coin_amount:g} ETH"
                     else:
@@ -199,28 +199,28 @@ class TradingDashboard:
 
                     size_info = tk.Label(
                         card,
-                        text=f"Size: {size_display} ({contract_size} contracts) | Margin: {margin:.2f} USDT",
+                        text=f"수량: {size_display} ({contract_size} 계약) | 마진: {margin:.2f} USDT",
                         font=('Arial', 11),
                         bg='#3d3d3d',
                         fg='#cccccc'
                     )
                     size_info.pack(anchor=tk.W, padx=10)
 
-                    # PnL
+                    # 손익
                     pnl_label = tk.Label(
                         card,
-                        text=f"PnL: {pnl:+.4f} USDT ({pnl_percent:+.2f}%)",
+                        text=f"손익: {pnl:+.4f} USDT ({pnl_percent:+.2f}%)",
                         font=('Arial', 12, 'bold'),
                         bg='#3d3d3d',
                         fg=pnl_color
                     )
                     pnl_label.pack(anchor=tk.W, padx=10, pady=5)
 
-            # If no positions
+            # 포지션이 없을 경우
             if active_positions == 0:
                 no_pos = tk.Label(
                     self.positions_frame_inner,
-                    text="No active positions",
+                    text="활성 포지션 없음",
                     font=('Arial', 12),
                     bg='#2d2d2d',
                     fg='#888888'
@@ -228,30 +228,30 @@ class TradingDashboard:
                 no_pos.pack(pady=20)
 
         except Exception as e:
-            print(f"Error updating positions: {e}")
+            print(f"포지션 업데이트 오류: {e}")
 
     def update_loop(self):
-        """Update loop using tkinter after"""
+        """tkinter after를 사용한 업데이트 루프"""
         try:
             self.update_balance()
             self.update_positions()
 
-            # Update status
+            # 상태 업데이트
             current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            self.status_label.config(text=f"Last Update: {current_time}")
+            self.status_label.config(text=f"마지막 업데이트: {current_time}")
 
         except Exception as e:
-            print(f"Error in update loop: {e}")
+            print(f"업데이트 루프 오류: {e}")
 
-        # Schedule next update after 5 seconds
+        # 5초 후 다음 업데이트 예약
         self.root.after(5000, self.update_loop)
 
     def run(self):
-        """Run the dashboard"""
+        """대시보드 실행"""
         self.root.mainloop()
 
 
 if __name__ == "__main__":
-    print("Starting Trading Dashboard...")
+    print("트레이딩 대시보드 시작 중...")
     dashboard = TradingDashboard()
     dashboard.run()

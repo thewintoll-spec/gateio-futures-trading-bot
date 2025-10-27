@@ -1,5 +1,5 @@
 """
-Gate.io Futures Exchange API Wrapper
+Gate.io 선물 거래소 API 래퍼
 """
 import gate_api
 from gate_api.exceptions import ApiException, GateApiException
@@ -8,8 +8,8 @@ import config
 
 class GateioFutures:
     def __init__(self, testnet=False):
-        """Initialize Gate.io Futures API client"""
-        # Configure host based on environment
+        """Gate.io 선물 API 클라이언트 초기화"""
+        # 환경에 따라 호스트 설정
         if testnet:
             host = "https://api-testnet.gateapi.io/api/v4"
         else:
@@ -19,14 +19,14 @@ class GateioFutures:
         configuration.key = config.API_KEY
         configuration.secret = config.API_SECRET
 
-        # Create API client and futures API instance
+        # API 클라이언트 및 선물 API 인스턴스 생성
         api_client = gate_api.ApiClient(configuration)
         self.futures_api = gate_api.FuturesApi(api_client)
-        self.settle = 'usdt'  # USDT settled futures
+        self.settle = 'usdt'  # USDT 정산 선물
         self.testnet = testnet
 
     def get_account_balance(self):
-        """Get account balance"""
+        """계좌 잔고 조회"""
         try:
             account = self.futures_api.list_futures_accounts(self.settle)
             return {
@@ -36,28 +36,28 @@ class GateioFutures:
                 'order_margin': account.order_margin
             }
         except GateApiException as e:
-            print(f"Error getting account balance: {e}")
+            print(f"잔고 조회 오류: {e}")
             return None
 
     def get_current_price(self, symbol):
-        """Get current price for a symbol"""
+        """심볼의 현재가 조회"""
         try:
-            contract = symbol  # Keep underscore: ETH_USDT
+            contract = symbol  # 언더스코어 유지: ETH_USDT
             tickers = self.futures_api.list_futures_tickers(self.settle, contract=contract)
             if tickers:
                 return float(tickers[0].last)
             return None
         except GateApiException as e:
-            print(f"Error getting price: {e}")
+            print(f"가격 조회 오류: {e}")
             return None
 
     def get_position(self, symbol):
-        """Get current position for a symbol"""
+        """심볼의 현재 포지션 조회"""
         try:
             contract = symbol
-            # list_positions returns all positions, filter by contract
+            # list_positions는 모든 포지션 반환, 계약으로 필터링
             positions = self.futures_api.list_positions(self.settle)
-            # Filter for the specific contract
+            # 특정 계약만 필터링
             positions = [p for p in positions if p.contract == contract]
             if positions:
                 pos = positions[0]
@@ -74,11 +74,11 @@ class GateioFutures:
                 }
             return None
         except GateApiException as e:
-            print(f"Error getting position: {e}")
+            print(f"포지션 조회 오류: {e}")
             return None
 
     def set_leverage(self, symbol, leverage):
-        """Set leverage for a symbol"""
+        """심볼의 레버리지 설정"""
         try:
             contract = symbol
             self.futures_api.update_position_leverage(
@@ -86,67 +86,67 @@ class GateioFutures:
                 contract,
                 str(leverage)
             )
-            print(f"Leverage set to {leverage}x for {symbol}")
+            print(f"{symbol} 레버리지 {leverage}배 설정 완료")
             return True
         except GateApiException as e:
-            print(f"Error setting leverage: {e}")
+            print(f"레버리지 설정 오류: {e}")
             return False
 
     def place_order(self, symbol, side, size, price=None, order_type='market'):
         """
-        Place an order
+        주문 실행
 
         Args:
-            symbol: Trading pair (e.g., 'BTC_USDT')
-            side: 'long' or 'short'
-            size: Order size (number of contracts)
-            price: Limit price (for limit orders)
-            order_type: 'market' or 'limit'
+            symbol: 거래쌍 (예: 'BTC_USDT')
+            side: 'long' 또는 'short'
+            size: 주문 크기 (계약 수)
+            price: 지정가 (지정가 주문 시)
+            order_type: 'market' 또는 'limit'
         """
         try:
             contract = symbol
 
-            # Prepare order
+            # 주문 준비
             order = gate_api.FuturesOrder(
                 contract=contract,
-                size=size if side == 'long' else -size,  # Negative for short
+                size=size if side == 'long' else -size,  # 숏은 음수
                 tif='ioc' if order_type == 'market' else 'gtc',
                 price=str(price) if price else '0'
             )
 
             result = self.futures_api.create_futures_order(self.settle, order)
-            print(f"Order placed: {side} {abs(size)} contracts at {order_type}")
+            print(f"주문 실행: {side} {abs(size)} 계약 ({order_type})")
             return result
 
         except GateApiException as e:
-            print(f"Error placing order: {e}")
+            print(f"주문 실행 오류: {e}")
             return None
 
     def close_position(self, symbol):
-        """Close all positions for a symbol"""
+        """심볼의 모든 포지션 청산"""
         try:
             position = self.get_position(symbol)
             if position and position['size'] != 0:
                 size = position['size']
-                side = 'short' if size > 0 else 'long'  # Opposite side to close
+                side = 'short' if size > 0 else 'long'  # 반대 방향으로 청산
                 self.place_order(symbol, side, abs(size), order_type='market')
-                print(f"Position closed for {symbol}")
+                print(f"{symbol} 포지션 청산 완료")
                 return True
             else:
-                print(f"No open position for {symbol}")
+                print(f"{symbol}에 열린 포지션 없음")
                 return False
         except Exception as e:
-            print(f"Error closing position: {e}")
+            print(f"포지션 청산 오류: {e}")
             return False
 
     def get_candlesticks(self, symbol, interval='1m', limit=100):
         """
-        Get candlestick data
+        캔들스틱 데이터 조회
 
         Args:
-            symbol: Trading pair
-            interval: Timeframe (1m, 5m, 15m, 1h, 4h, 1d)
-            limit: Number of candles
+            symbol: 거래쌍
+            interval: 시간프레임 (1m, 5m, 15m, 1h, 4h, 1d)
+            limit: 캔들 개수
         """
         try:
             contract = symbol
@@ -167,7 +167,7 @@ class GateioFutures:
             } for c in candles]
 
         except GateApiException as e:
-            print(f"Error getting candlesticks: {e}")
+            print(f"캔들스틱 조회 오류: {e}")
             return None
 
     def get_position_history(self, limit=20):
@@ -196,7 +196,7 @@ class GateioFutures:
             return result
 
         except GateApiException as e:
-            print(f"Error getting position history: {e}")
+            print(f"포지션 내역 조회 오류: {e}")
             return None
 
     def get_order_history(self, status='finished', limit=20):
@@ -231,7 +231,7 @@ class GateioFutures:
             return result
 
         except GateApiException as e:
-            print(f"Error getting order history: {e}")
+            print(f"주문 내역 조회 오류: {e}")
             return None
 
     def get_trade_history(self, limit=20):
@@ -263,5 +263,5 @@ class GateioFutures:
             return result
 
         except GateApiException as e:
-            print(f"Error getting trade history: {e}")
+            print(f"체결 내역 조회 오류: {e}")
             return None
