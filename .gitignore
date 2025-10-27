@@ -17,8 +17,17 @@ ENV/
 *.log
 *.jsonl
 trades_*.jsonl
+logs/
+
+# Archive and Tests
+archive/
+tests/
+
+# Large result files
 *.txt
 optimization_*.txt
+backtest_*.txt
+*_results.txt
 
 # IDE
 .vscode/
