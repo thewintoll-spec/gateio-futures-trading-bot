@@ -37,7 +37,7 @@ class MultiSymbolTradingBot:
                 dynamic_sl=True
             )
 
-        self.leverage = 2  # 2x leverage for safety
+        self.leverage = 7  # 행운의 7배 (방송용)
 
         # Position tracking
         self.positions = {}  # {symbol: {'side': 'long/short', 'margin': float, 'tp': float, 'sl': float}}
