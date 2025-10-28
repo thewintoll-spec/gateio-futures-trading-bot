@@ -12,7 +12,6 @@ from datetime import datetime
 import config
 from exchange import GateioFutures
 from adaptive_strategy import AdaptiveStrategy
-from adaptive_strategy_v2 import AdaptiveStrategyV2
 from trade_logger import TradeLogger
 
 
